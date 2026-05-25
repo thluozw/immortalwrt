@@ -4,67 +4,61 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Target (e.g. qualcommax/ipq60xx)"
+        description: "Target"
         required: true
         default: "qualcommax/ipq60xx"
       device:
-        description: "Device (e.g. jdcloud_re-cs-02)"
+        description: "Device"
         required: true
         default: "jdcloud_re-cs-02"
   push:
-    branches:
-      - master
-    paths:
-      - .github/workflows/build.yml
-      - files/**
+    branches: [master]
+    paths: [".github/workflows/build.yml", "files/**"]
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gcc-multilib gawk \
             git libncurses-dev libssl-dev python3 subversion unzip wget libelf-dev zstd \
             ccache gettext rsync
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Bootstrap feeds
         run: |
-          cat > feeds.conf.default << "EOF"
-src-link base ../feeds/base
-src-link packages ../feeds/packages
-src-link luci ../feeds/luci
-src-link routing ../feeds/routing
-src-link telephony ../feeds/telephony
-EOF
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-      - name: Configure target and device
+
+      - name: Configure
         run: |
           TARGET="${{ inputs.target || 'qualcommax/ipq60xx' }}"
           DEVICE="${{ inputs.device || 'jdcloud_re-cs-02' }}"
           BOARD=$(echo "$TARGET" | cut -d/ -f1)
           SUBTARGET=$(echo "$TARGET" | cut -d/ -f2)
-          echo "=== Building: Board=$BOARD Subtarget=$SUBTARGET Device=$DEVICE ==="
+
           make defconfig BOARD="$BOARD" SUBTARGET="$SUBTARGET"
-          echo "CONFIG_TARGET_${BOARD^^}_${SUBTARGET^^}=y" >> .config
+
           echo "CONFIG_TARGET_${BOARD^^}_${SUBTARGET^^}_DEVICE_${DEVICE//-/_}=y" >> .config
           echo "CONFIG_TARGET_ROOTFS_OVERLAY=y" >> .config
-          echo "=== Config lines ==="
-          grep -E "qualcommax|jdc|ROOTFS" .config || true
+
+          grep -E "qualcommax|jdc|ROOTFS" .config
+
       - name: Build
         run: make -j$(nproc) world
         env:
-          MAKEFLAGS: "-j$(nproc)"
-          DEBIAN_FRONTEND: "noninteractive"
+          DEBIAN_FRONTEND: noninteractive
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ github.run_number }}
+          name: firmware
           path: |
             bin/targets/qualcommax/ipq60xx/*sysupgrade.bin
             bin/targets/qualcommax/ipq60xx/*initramfs*.itb
