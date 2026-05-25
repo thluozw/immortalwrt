@@ -1,0 +1,49 @@
+name: Build ImmortalWrt Firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target'
+        required: true
+        default: 'qualcommax/ipq60xx'
+      device:
+        description: 'Device'
+        required: true
+        default: 'jdcloud_re-cs-02'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gcc-multilib gawk \
+            git libncurses-dev libssl-dev python3 subversion unzip wget libelf-dev zstd \
+            ccache gettext
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Install ImmortalWrt feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+      - name: Generate config
+        run: |
+          echo "CONFIG_TARGET_ROOTFS_OVERLAY=y" >> .config
+          cat .config | grep -E "qualcommax|ipq60xx|jdc" | head -10
+      - name: Build
+        run: |
+          make -j$(nproc) world
+        env:
+          MAKEFLAGS: "-j$(nproc)"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.run_number }}
+          path: |
+            bin/targets/${{ inputs.target }}/*sysupgrade.bin
+            bin/targets/${{ inputs.target }}/*initramfs.uImage.itb
+          retention-days: 3
