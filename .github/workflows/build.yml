@@ -11,6 +11,12 @@ on:
         description: "Device (e.g. jdcloud_re-cs-02)"
         required: true
         default: "jdcloud_re-cs-02"
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/build.yml
+      - files/**
 
 jobs:
   build:
@@ -27,6 +33,7 @@ jobs:
         with:
           fetch-depth: 1
           sparse-checkout: |
+            .github/
             scripts/
             Makefile
             include/
@@ -36,10 +43,11 @@ jobs:
             feeds.conf.default
             config
             rules.mk
+            files/
           sparse-checkout-cone-mode: false
       - name: Bootstrap feeds
         run: |
-          cat > feeds.conf.default << EOF
+          cat > feeds.conf.default << "EOF"
 src-link base ../feeds/base
 src-link packages ../feeds/packages
 src-link luci ../feeds/luci
@@ -50,8 +58,8 @@ EOF
           ./scripts/feeds install -a
       - name: Configure target and device
         run: |
-          TARGET="${{ inputs.target }}"
-          DEVICE="${{ inputs.device }}"
+          TARGET="${{ inputs.target || 'qualcommax/ipq60xx' }}"
+          DEVICE="${{ inputs.device || 'jdcloud_re-cs-02' }}"
           BOARD=$(echo "$TARGET" | cut -d/ -f1)
           SUBTARGET=$(echo "$TARGET" | cut -d/ -f2)
           echo "Board: $BOARD  Subtarget: $SUBTARGET  Device: $DEVICE"
@@ -62,8 +70,8 @@ EOF
           echo "CONFIG_TARGET_${BOARD^^}_${SUBTARGET^^}_DEVICE_${DEVICE//-/_}=y" >> .config
           echo "CONFIG_TARGET_ROOTFS_OVERLAY=y" >> .config
 
-          echo "=== Config lines ===" 
-          grep -E "qualcommax|jdc|ROOTFS" .config | head -10
+          echo "=== Config ==="
+          grep -E "qualcommax|jdc|ROOTFS" .config
       - name: Build
         run: make -j$(nproc) world
         env:
@@ -74,7 +82,7 @@ EOF
         with:
           name: firmware-${{ github.run_number }}
           path: |
-            bin/targets/${{ inputs.target }}/*sysupgrade.bin
-            bin/targets/${{ inputs.target }}/*initramfs.uImage.itb
-            bin/targets/${{ inputs.target }}/*md5sum
+            bin/targets/${{ inputs.target || 'qualcommax/ipq60xx' }}/*sysupgrade.bin
+            bin/targets/${{ inputs.target || 'qualcommax/ipq60xx' }}/*initramfs*.itb
+            bin/targets/${{ inputs.target || 'qualcommax/ipq60xx' }}/*md5sum
           retention-days: 3
