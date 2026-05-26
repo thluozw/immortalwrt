@@ -142,7 +142,7 @@ jobs:
 
           # Base packages (non-kmod) — copy full tree with APKINDEX
           mkdir -p "${REPO_BASE}/packages"
-          cp -r bin/packages/aarch64_cortex-a53/* "${REPO_BASE}/packages/"
+          cp -r bin/packages/aarch64_cortex-a53 "${REPO_BASE}/packages/"
 
           # Kmod packages (target-specific)
           mkdir -p "${REPO_BASE}/kmods"
@@ -153,7 +153,7 @@ jobs:
 
           echo "=== APK repo summary ==="
           echo "Total .apk: $(find deploy -name '*.apk' | wc -l)"
-          echo "APKINDEX files: $(find deploy -name 'APKINDEX.tar.gz' | wc -l)"
+          echo "packages.adb files: $(find deploy -name 'packages.adb' | wc -l)"
           echo "Key .apk sample:"
           find deploy -name '*.apk' | grep -iE "luci-base|dockerd|mwan3" | head -10
 
