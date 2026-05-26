@@ -16,11 +16,17 @@ on:
     paths:
       - ".github/workflows/build.yml"
       - "configs/config_jdcloud_re-cs-02.config"
+      - "configs/extra_packages.config"
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -33,24 +39,52 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Download pre-configured .config
+      - name: Download base .config and extra packages
         run: |
-          curl -L -o .config \
+          curl -fL -o .config \
             https://raw.githubusercontent.com/thluozw/immortalwrt/master/configs/config_jdcloud_re-cs-02.config
-          echo "=== Config check ==="
-          grep -E "^CONFIG_TARGET_PROFILE|CONFIG_TARGET_qualcommax_ipq60xx_DEVICE|CONFIG_DEFAULT_ipq-wifi|CONFIG_PACKAGE_luci|CONFIG_PACKAGE_docker|CONFIG_PACKAGE_mwan3" .config | head -15
+          curl -fL -o extra_packages.config \
+            https://raw.githubusercontent.com/thluozw/immortalwrt/master/configs/extra_packages.config
+          echo "" >> .config
+          cat extra_packages.config >> .config
+          echo "=== Config tail (extras applied) ==="
+          tail -40 .config
 
       - name: Bootstrap feeds
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Resolve dependencies (defconfig)
+        run: |
+          make defconfig
+          echo "=== Sanity check ==="
+          for k in CONFIG_PACKAGE_luci CONFIG_PACKAGE_luci-app-firewall \
+                   CONFIG_PACKAGE_mwan3 CONFIG_PACKAGE_luci-app-mwan3 \
+                   CONFIG_PACKAGE_dockerd CONFIG_PACKAGE_luci-app-dockerman \
+                   CONFIG_PACKAGE_kmod-veth CONFIG_PACKAGE_kmod-fs-btrfs \
+                   CONFIG_TARGET_PROFILE; do
+            echo -n "$k: "; grep -E "^${k}(=|=y)" .config || echo "NOT SET"
+          done
+
+      - name: Download sources
+        run: make -j$(nproc) download V=s 2>&1 | tail -30 || true
+
       - name: Build
         run: make -j$(nproc) world
         env:
           DEBIAN_FRONTEND: noninteractive
 
-      - name: Upload artifacts
+      - name: List built artifacts
+        if: always()
+        run: |
+          echo "=== Targets ==="
+          ls -lh bin/targets/qualcommax/ipq60xx/ 2>/dev/null || echo "no targets"
+          echo "=== Packages count ==="
+          find bin/packages -name "*.apk" 2>/dev/null | wc -l || echo 0
+
+      - name: Upload firmware
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: firmware
@@ -58,4 +92,25 @@ jobs:
             bin/targets/qualcommax/ipq60xx/*sysupgrade.bin
             bin/targets/qualcommax/ipq60xx/*initramfs*.itb
             bin/targets/qualcommax/ipq60xx/sha256sums
-          retention-days: 3
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            bin/packages/aarch64_cortex-a53/
+            bin/targets/qualcommax/ipq60xx/packages/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: logs/
+          retention-days: 7
+          if-no-files-found: ignore
