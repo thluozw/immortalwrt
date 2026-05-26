@@ -1,0 +1,146 @@
+name: Build ImmortalWrt (kernel 6.12.89)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison gawk gcc-multilib g++-multilib \
+            git libncurses-dev libssl-dev python3 subversion unzip wget gettext zstd \
+            libelf-dev libtool rsync bc
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Pin kernel to 6.12.89
+        run: |
+          # Override kernel version and hash in target/linux/generic/kernel-6.12
+          # Hash from kernel.org sha256sums.asc: linux-6.12.89.tar.xz
+          sed -i 's/^LINUX_VERSION-6\.12 = .*/LINUX_VERSION-6.12 = .89/' target/linux/generic/kernel-6.12
+          # Replace the hash line for 6.12.91 (if present) and add hash for 6.12.89
+          sed -i '/^LINUX_KERNEL_HASH-6\.12\.[0-9]/d' target/linux/generic/kernel-6.12
+          echo 'LINUX_KERNEL_HASH-6.12.89 = 585afd804a9d2853a353dba5e3ac05627a8186cb1274668f151c0b10250799a0' >> target/linux/generic/kernel-6.12
+          echo "=== Pinned kernel version ==="
+          grep -E "LINUX_(VERSION|KERNEL_HASH)" target/linux/generic/kernel-6.12
+
+      - name: Bootstrap feeds (BEFORE config so Kconfig sees luci)
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Download base .config and extra packages
+        run: |
+          curl -fL -o .config \
+            https://raw.githubusercontent.com/thluozw/immortalwrt/master/configs/config_jdcloud_re-cs-02.config
+          curl -fL -o extra_packages.config \
+            https://raw.githubusercontent.com/thluozw/immortalwrt/master/configs/extra_packages.config
+
+      - name: Strip "is not set" lines for packages we want to enable
+        run: |
+          while IFS= read -r line; do
+            case "$line" in
+              CONFIG_PACKAGE_*=y)
+                key="${line%=y}"
+                sed -i "\\|^# ${key} is not set\$|d" .config
+                ;;
+            esac
+          done < extra_packages.config
+
+          echo "" >> .config
+          cat extra_packages.config >> .config
+
+          echo "=== Verify key packages in merged config ==="
+          for k in CONFIG_PACKAGE_luci CONFIG_PACKAGE_luci-base \
+                   CONFIG_PACKAGE_uhttpd CONFIG_PACKAGE_rpcd CONFIG_PACKAGE_lua \
+                   CONFIG_PACKAGE_mwan3 CONFIG_PACKAGE_dockerd; do
+            grep -HE "^${k}=" .config && echo "  -> OK" || echo "  -> $k MISSING"
+          done
+
+      - name: Resolve dependencies (defconfig)
+        run: |
+          make defconfig
+          echo "=== Sanity check after defconfig ==="
+          ok=0; fail=0
+          for k in CONFIG_PACKAGE_luci CONFIG_PACKAGE_luci-base \
+                   CONFIG_PACKAGE_luci-mod-network CONFIG_PACKAGE_luci-mod-status \
+                   CONFIG_PACKAGE_luci-app-firewall CONFIG_PACKAGE_luci-theme-bootstrap \
+                   CONFIG_PACKAGE_uhttpd CONFIG_PACKAGE_uhttpd-mod-ubus CONFIG_PACKAGE_rpcd \
+                   CONFIG_PACKAGE_rpcd-mod-luci CONFIG_PACKAGE_liblucihttp \
+                   CONFIG_PACKAGE_lua CONFIG_PACKAGE_libuci-lua \
+                   CONFIG_PACKAGE_mwan3 CONFIG_PACKAGE_luci-app-mwan3 \
+                   CONFIG_PACKAGE_dockerd CONFIG_PACKAGE_luci-app-dockerman \
+                   CONFIG_PACKAGE_kmod-veth CONFIG_PACKAGE_kmod-fs-btrfs \
+                   CONFIG_PACKAGE_kmod-nf-ipvs CONFIG_PACKAGE_iptables-nft \
+                   CONFIG_PACKAGE_luci-i18n-base-zh-cn CONFIG_PACKAGE_luci-i18n-firewall-zh-cn \
+                   CONFIG_PACKAGE_luci-app-athena-led CONFIG_PACKAGE_htop; do
+            if grep -qE "^${k}=y" .config; then
+              echo "  ✓ $k"
+              ok=$((ok+1))
+            else
+              echo "  ✗ $k MISSING"
+              fail=$((fail+1))
+            fi
+          done
+          echo "=== Result: ok=$ok fail=$fail ==="
+          echo "=== Kernel version ==="
+          grep "CONFIG_KERNEL_VERSION" .config
+
+      - name: Download sources
+        run: make -j$(nproc) download V=s 2>&1 | tail -30 || true
+
+      - name: Build
+        run: make -j$(nproc) world
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
+      - name: List built artifacts
+        if: always()
+        run: |
+          echo "=== Targets ==="
+          ls -lh bin/targets/qualcommax/ipq60xx/ 2>/dev/null || echo "no targets"
+          echo "=== luci/docker/mwan3 .apk built? ==="
+          find bin -name "*.apk" 2>/dev/null | grep -E "luci|docker|mwan3|uhttpd" | head -20 || echo "none"
+
+      - name: Upload firmware
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-6.12.89
+          path: |
+            bin/targets/qualcommax/ipq60xx/*sysupgrade.bin
+            bin/targets/qualcommax/ipq60xx/*initramfs*.itb
+            bin/targets/qualcommax/ipq60xx/sha256sums
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-6.12.89
+          path: |
+            bin/packages/aarch64_cortex-a53/
+            bin/targets/qualcommax/ipq60xx/packages/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-6.12.89
+          path: logs/
+          retention-days: 7
+          if-no-files-found: ignore
