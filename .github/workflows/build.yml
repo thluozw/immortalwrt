@@ -47,32 +47,39 @@ jobs:
 
           make defconfig BOARD="$BOARD" SUBTARGET="$SUBTARGET"
 
-          echo "CONFIG_TARGET_${BOARD}_${DEVICE}=y" >> .config
+          # Disable ALL other target platforms so only qualcommax/ipq60xx is built
+          ./scripts/config/disable TARGET_bcm53xx
+          ./scripts/config/disable TARGET_bcm4908
+          ./scripts/config/disable TARGET_gemini
+          ./scripts/config/disable TARGET_hi3516av
+          ./scripts/config/disable TARGET_hi3519av
+          ./scripts/config/disable TARGET_imx
+          ./scripts/config/disable TARGET_mediatek
+          ./scripts/config/disable TARGET_mvebu
+          ./scripts/config/disable TARGET_octeon
+          ./scripts/config/disable TARGET_oxnas
+          ./scripts/config/disable TARGET_qemu
+          ./scripts/config/disable TARGET_ramips
+          ./scripts/config/disable TARGET_realtek
+          ./scripts/config/disable TARGET-rockchip
+          ./scripts/config/disable TARGET_rockchip
+          ./scripts/config/disable TARGET_sunxi
+          ./scripts/config/disable TARGET_x86
+
+          # Set the correct device and enable overlay
+          ./scripts/config/enable CONFIG_TARGET_${BOARD}_${DEVICE}
           echo "CONFIG_TARGET_ROOTFS_OVERLAY=y" >> .config
+          echo "CONFIG_TARGET_PROFILE=\"DEVICE_${DEVICE}\"" >> .config
 
-          # Disable unnecessary U-Boot variants that cause build failures
-          echo "CONFIG_TARGET_BOARD_BOOT_UBOOT=n" >> .config
-          echo "# CONFIG_TARGET_uboot-mediatek is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-rockchip is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-qualcommax is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-sunxi is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-bcm4908 is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-layerscape is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-mvebu is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-octeon is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-oxnas is not set" >> .config
-          echo "# CONFIG_TARGET_uboot-sunxi64 is not set" >> .config
-
-          # Build only target/linux + target/compile (skip full world to avoid unnecessary packages)
-          make -j$(nproc) target/compile V=s
-          make -j$(nproc) package/compile ISSUENESS=ignored
+          cat .config | grep -E "^CONFIG_TARGET_|^CONFIG_TARGET_PROFILE|CONFIG_TARGET_ROOTFS"
 
         env:
           DEBIAN_FRONTEND: noninteractive
 
-      - name: Build firmware image
-        run: |
-          make -j$(nproc) image/compile ISSUENESS=ignored
+      - name: Build
+        run: make -j$(nproc) world
+        env:
+          DEBIAN_FRONTEND: noninteractive
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
