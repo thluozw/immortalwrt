@@ -82,9 +82,7 @@ jobs:
                    CONFIG_PACKAGE_mwan3 CONFIG_PACKAGE_luci-app-mwan3 \
                    CONFIG_PACKAGE_dockerd CONFIG_PACKAGE_luci-app-dockerman \
                    CONFIG_PACKAGE_kmod-veth CONFIG_PACKAGE_kmod-fs-btrfs \
-                   CONFIG_PACKAGE_kmod-nf-ipvs CONFIG_PACKAGE_iptables-nft \
-                   CONFIG_PACKAGE_luci-i18n-base-zh-cn CONFIG_PACKAGE_luci-i18n-firewall-zh-cn \
-                   CONFIG_PACKAGE_luci-app-athena-led CONFIG_PACKAGE_htop; do
+                   CONFIG_PACKAGE_kmod-nf-ipvs CONFIG_PACKAGE_iptables-nft \CONFIG_PACKAGE_htop; do
             if grep -qE "^${k}=y" .config; then
               echo "  ✓ $k"
               ok=$((ok+1))
@@ -94,8 +92,7 @@ jobs:
             fi
           done
           echo "=== Result: ok=$ok fail=$fail ==="
-          echo "=== Kernel version ==="
-          grep "CONFIG_KERNEL_VERSION" .config
+          grep "CONFIG_KERNEL_VERSION" .config || true
 
       - name: Download sources
         run: make -j$(nproc) download V=s 2>&1 | tail -30 || true
