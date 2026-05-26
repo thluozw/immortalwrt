@@ -127,7 +127,7 @@ jobs:
 
           # Base packages (non-kmod) — copy full tree with APKINDEX
           mkdir -p "${REPO_BASE}/packages"
-          cp -r bin/packages/aarch64_cortex-a53/* "${REPO_BASE}/packages/"
+          cp -r bin/packages/aarch64_cortex-a53 "${REPO_BASE}/packages/"
 
           # Kmod packages (target-specific)
           mkdir -p "${REPO_BASE}/kmods"
