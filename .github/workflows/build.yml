@@ -13,7 +13,9 @@ on:
         default: "jdcloud_re-cs-02"
   push:
     branches: [master]
-    paths: [".github/workflows/build.yml", "files/**"]
+    paths:
+      - ".github/workflows/build.yml"
+      - "files/**"
 
 jobs:
   build:
@@ -22,9 +24,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang flex bison g++ gcc-multilib gawk \
-            git libncurses-dev libssl-dev python3 subversion unzip wget libelf-dev zstd \
-            ccache gettext rsync
+          sudo apt-get install -y build-essential clang flex bison gawk gcc-multilib g++-multilib \
+            git libncurses-dev libssl-dev python3 subversion unzip wget gettext zstd \
+            libelf-dev libtool rsync bc
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,22 +40,39 @@ jobs:
 
       - name: Configure
         run: |
-          TARGET="${{ inputs.target || 'qualcommax/ipq60xx' }}"
-          DEVICE="${{ inputs.device || 'jdcloud_re-cs-02' }}"
+          TARGET="${{ github.event.inputs.target || 'qualcommax/ipq60xx' }}"
+          DEVICE="${{ github.event.inputs.device || 'jdcloud_re-cs-02' }}"
           BOARD=$(echo "$TARGET" | cut -d/ -f1)
           SUBTARGET=$(echo "$TARGET" | cut -d/ -f2)
 
           make defconfig BOARD="$BOARD" SUBTARGET="$SUBTARGET"
 
-          echo "CONFIG_TARGET_${BOARD^^}_${SUBTARGET^^}_DEVICE_${DEVICE//-/_}=y" >> .config
+          echo "CONFIG_TARGET_${BOARD}_${DEVICE}=y" >> .config
           echo "CONFIG_TARGET_ROOTFS_OVERLAY=y" >> .config
 
-          grep -E "qualcommax|jdc|ROOTFS" .config
+          # Disable unnecessary U-Boot variants that cause build failures
+          echo "CONFIG_TARGET_BOARD_BOOT_UBOOT=n" >> .config
+          echo "# CONFIG_TARGET_uboot-mediatek is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-rockchip is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-qualcommax is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-sunxi is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-bcm4908 is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-layerscape is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-mvebu is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-octeon is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-oxnas is not set" >> .config
+          echo "# CONFIG_TARGET_uboot-sunxi64 is not set" >> .config
 
-      - name: Build
-        run: make -j$(nproc) world
+          # Build only target/linux + target/compile (skip full world to avoid unnecessary packages)
+          make -j$(nproc) target/compile V=s
+          make -j$(nproc) package/compile ISSUENESS=ignored
+
         env:
           DEBIAN_FRONTEND: noninteractive
+
+      - name: Build firmware image
+        run: |
+          make -j$(nproc) image/compile ISSUENESS=ignored
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -62,5 +81,5 @@ jobs:
           path: |
             bin/targets/qualcommax/ipq60xx/*sysupgrade.bin
             bin/targets/qualcommax/ipq60xx/*initramfs*.itb
-            bin/targets/qualcommax/ipq60xx/*md5sum
+            bin/targets/qualcommax/ipq60xx/sha256sums
           retention-days: 3
