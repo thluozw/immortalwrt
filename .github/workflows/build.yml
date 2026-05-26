@@ -47,31 +47,84 @@ jobs:
 
           make defconfig BOARD="$BOARD" SUBTARGET="$SUBTARGET"
 
-          # Disable ALL other target platforms so only qualcommax/ipq60xx is built
-          ./scripts/config/disable TARGET_bcm53xx
-          ./scripts/config/disable TARGET_bcm4908
-          ./scripts/config/disable TARGET_gemini
-          ./scripts/config/disable TARGET_hi3516av
-          ./scripts/config/disable TARGET_hi3519av
-          ./scripts/config/disable TARGET_imx
-          ./scripts/config/disable TARGET_mediatek
-          ./scripts/config/disable TARGET_mvebu
-          ./scripts/config/disable TARGET_octeon
-          ./scripts/config/disable TARGET_oxnas
-          ./scripts/config/disable TARGET_qemu
-          ./scripts/config/disable TARGET_ramips
-          ./scripts/config/disable TARGET_realtek
-          ./scripts/config/disable TARGET-rockchip
-          ./scripts/config/disable TARGET_rockchip
-          ./scripts/config/disable TARGET_sunxi
-          ./scripts/config/disable TARGET_x86
+          # Disable ALL other target platforms (only build qualcommax/ipq60xx)
+          for t in bcm53xx bcm4908 gemini hi3516av hi3519av imx mediatek mvebu octeon oxnas qemu ramips realtek rockchip sunxi x86; do
+            sed -i "s/^CONFIG_TARGET_${t}=y$/# CONFIG_TARGET_${t} is not set/" .config
+            sed -i "s/^CONFIG_TARGET_${t}_/# CONFIG_TARGET_${t}_ is not set #/" .config
+          done
 
-          # Set the correct device and enable overlay
-          ./scripts/config/enable CONFIG_TARGET_${BOARD}_${DEVICE}
+          # Set the correct device
+          sed -i "s|^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02=.*|CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02=y|" .config
+          sed -i '/CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02.*is not set/d' .config
+          echo "CONFIG_TARGET_PROFILE=\"DEVICE_jdcloud_re-cs-02\"" >> .config
           echo "CONFIG_TARGET_ROOTFS_OVERLAY=y" >> .config
-          echo "CONFIG_TARGET_PROFILE=\"DEVICE_${DEVICE}\"" >> .config
 
-          cat .config | grep -E "^CONFIG_TARGET_|^CONFIG_TARGET_PROFILE|CONFIG_TARGET_ROOTFS"
+          # Fix ipq-wifi: use jdcloud wifi driver instead of 8devices
+          sed -i 's|CONFIG_DEFAULT_ipq-wifi-8devices_mango=y|# CONFIG_DEFAULT_ipq-wifi-8devices_mango is not set|' .config
+          echo "CONFIG_DEFAULT_ipq-wifi-jdcloud_re-cs-02=y" >> .config
+          sed -i 's|CONFIG_PACKAGE_ipq-wifi-8devices_mango=y|# CONFIG_PACKAGE_ipq-wifi-8devices_mango is not set|' .config
+          echo "CONFIG_PACKAGE_ipq-wifi-jdcloud_re-cs-02=y" >> .config
+
+          # === Default packages (from jdcloud_re-cs-02 + base) ===
+          for pkg in \
+            ath11k-firmware-qcn9074 \
+            ipq-wifi-jdcloud_re-cs-02 \
+            kmod-ath11k-pci \
+            ath11k-firmware-ipq6018 \
+            automount \
+            base-files \
+            ca-bundle \
+            dnsmasq-full \
+            dropbear \
+            firewall4 \
+            fstools \
+            kmod-ath11k-ahb \
+            kmod-gpio-button-hotplug \
+            kmod-leds-gpio \
+            kmod-nft-offload \
+            kmod-qca-nss-dp \
+            kmod-usb-dwc3 \
+            kmod-usb-dwc3-qcom \
+            kmod-usb3 \
+            libc \
+            libgcc \
+            libustream-openssl \
+            logd \
+            losetup \
+            mtd \
+            netifd \
+            nftables \
+            odhcp6c \
+            odhcpd-ipv6only \
+            ppp \
+            ppp-mod-pppoe \
+            procd-ujail \
+            uboot-envtools \
+            uci \
+            uclient-fetch \
+            urandom-seed \
+            urngd \
+            wpad-openssl; do
+            echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+          done
+
+          # === LuCI packages ===
+          for pkg in luci luci-ssl-openssl luci-app-firewall luci-app-mwan3 luci-i18n-mwan3-zh-cn luci-i18n-base-zh-cn luci-theme-bootstrap; do
+            echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+          done
+
+          # === Docker & container (for dockerman) ===
+          for pkg in dockerd luci-app-dockerman kmod-veth kmod-nf-ipvs kmod-ipt-nat kmod-ipt-extra kmod-ipt-nat6 kmod-ipt-physdev kmod-fs-btrfs; do
+            echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+          done
+
+          # === Network (mwan3 deps) ===
+          for pkg in ip-full iptables kmod-ipt-conntrack-extra kmod-ipt-ipopt kmod-ipt-ipset kmod-nf-conncount; do
+            echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+          done
+
+          echo "=== Config check ==="
+          grep -E "^CONFIG_TARGET_PROFILE|^CONFIG_TARGET_ROOTFS_OVERLAY|CONFIG_DEFAULT_ipq-wifi|CONFIG_PACKAGE_luci|CONFIG_PACKAGE_docker|CONFIG_PACKAGE_mwan3" .config | head -20
 
         env:
           DEBIAN_FRONTEND: noninteractive
