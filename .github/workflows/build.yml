@@ -18,6 +18,9 @@ on:
       - "configs/config_jdcloud_re-cs-02.config"
       - "configs/extra_packages.config"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -131,6 +134,37 @@ jobs:
           find bin/packages -name "*.apk" 2>/dev/null | wc -l || echo 0
           echo "=== luci/docker/mwan3 .apk built? ==="
           find bin -name "*.apk" 2>/dev/null | grep -E "luci|docker|mwan3|uhttpd" | head -30 || echo "none"
+
+      - name: Prepare APK repo structure
+        if: success()
+        run: |
+          REPO_BASE="deploy/jdcloud_re-cs-02/${{ env.BUILD_TAG }}"
+
+          # Base packages (non-kmod) — copy full tree with APKINDEX
+          mkdir -p "${REPO_BASE}/packages"
+          cp -r bin/packages/aarch64_cortex-a53/* "${REPO_BASE}/packages/"
+
+          # Kmod packages (target-specific)
+          mkdir -p "${REPO_BASE}/kmods"
+          cp -r bin/targets/qualcommax/ipq60xx/packages/* "${REPO_BASE}/kmods/"
+
+          # Write LATEST tag for easy lookup
+          echo "${{ env.BUILD_TAG }}" > deploy/LATEST
+
+          echo "=== APK repo summary ==="
+          echo "Total .apk: $(find deploy -name '*.apk' | wc -l)"
+          echo "APKINDEX files: $(find deploy -name 'APKINDEX.tar.gz' | wc -l)"
+          echo "Key .apk sample:"
+          find deploy -name '*.apk' | grep -iE "luci-base|dockerd|mwan3" | head -10
+
+      - name: Deploy APK repo to gh-pages
+        if: success()
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./deploy
+          keep_files: true
+          commit_message: "deploy: ${{ env.BUILD_TAG }}"
 
       - name: Upload firmware
         if: always()
