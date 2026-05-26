@@ -39,6 +39,13 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Generate build tag
+        run: |
+          KERNEL_MINOR=$(grep -oP 'LINUX_VERSION-6\.12 = \.\K[0-9]+' target/linux/generic/kernel-6.12)
+          BUILD_TS=$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S)
+          echo "BUILD_TAG=6.12.${KERNEL_MINOR}_${BUILD_TS}" >> $GITHUB_ENV
+          echo "Build tag: 6.12.${KERNEL_MINOR}_${BUILD_TS}"
+
       - name: Bootstrap feeds (BEFORE config so Kconfig sees luci packages)
         run: |
           ./scripts/feeds update -a
@@ -129,7 +136,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: firmware
+          name: firmware-${{ env.BUILD_TAG }}
           path: |
             bin/targets/qualcommax/ipq60xx/*sysupgrade.bin
             bin/targets/qualcommax/ipq60xx/*initramfs*.itb
@@ -141,7 +148,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: packages
+          name: packages-${{ env.BUILD_TAG }}
           path: |
             bin/packages/aarch64_cortex-a53/
             bin/targets/qualcommax/ipq60xx/packages/
@@ -152,7 +159,8 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
+          name: build-logs-${{ env.BUILD_TAG }}
           path: logs/
           retention-days: 7
           if-no-files-found: ignore
+
