@@ -66,6 +66,60 @@ jobs:
           cp configs/fstab_clean files/etc/config/fstab
           echo "=== Clean fstab for ROM ==="
           cat files/etc/config/fstab
+      - name: Extract WiFi firmware from official ImmortalWrt firmware
+        run: |
+          # Download official ImmortalWrt jdcloud_re-cs-02 firmware
+          # This contains the correct WiFi calibration data (board-2.bin) and
+          # ath11k firmware files that may not be packaged correctly in our build.
+          OFFICIAL_URL="https://firmware.immortalwrt.org/snapshots/targets/qualcommax/ipq60xx/openwrt-qualcommax-ipq60xx-jdcloud_re-cs-02-squashfs-sysupgrade.bin"
+          echo "Downloading official firmware for WiFi firmware extraction..."
+          curl -fL --progress-bar -o /tmp/official.bin "${OFFICIAL_URL}" || {
+            echo "WARNING: Could not download official firmware, WiFi may not work"
+            exit 0
+          }
+
+          # Extract sysupgrade tar
+          cd /tmp
+          rm -rf sysupgrade-* squashfs-root 2>/dev/null || true
+          tar -xf /tmp/official.bin
+
+          # Find the extracted directory
+          EXTRACTED_DIR=$(ls -d sysupgrade-* 2>/dev/null | head -1)
+          if [ -z "$EXTRACTED_DIR" ]; then
+            echo "ERROR: Could not find extracted directory"
+            exit 1
+          fi
+
+          # Extract squashfs from the root file
+          unsquashfs -d /tmp/squashfs-root "/tmp/${EXTRACTED_DIR}/root"
+
+          # Copy WiFi firmware files
+          echo "=== Copying WiFi firmware files ==="
+          mkdir -p files/lib/firmware/
+
+          # Copy ath11k firmware (IPQ6018 WiFi 6 radio)
+          if [ -d "/tmp/squashfs-root/lib/firmware/ath11k/IPQ6018" ]; then
+            cp -r /tmp/squashfs-root/lib/firmware/ath11k/IPQ6018 files/lib/firmware/ath11k/
+            echo "Copied ath11k/IPQ6018"
+          else
+            echo "WARNING: ath11k/IPQ6018 not found in official firmware"
+          fi
+
+          # Copy generic IPQ6018 firmware files
+          if [ -d "/tmp/squashfs-root/lib/firmware/IPQ6018" ]; then
+            cp -r /tmp/squashfs-root/lib/firmware/IPQ6018 files/lib/firmware/
+            echo "Copied IPQ6018 firmware"
+          fi
+
+          # Copy qca-nss firmware if present
+          if [ -d "/tmp/squashfs-root/lib/firmware/qca-nss" ]; then
+            cp -r /tmp/squashfs-root/lib/firmware/qca-nss files/lib/firmware/
+            echo "Copied qca-nss firmware"
+          fi
+
+          echo "=== WiFi firmware files copied ==="
+          find files/lib/firmware -type f -name "*.bin" 2>/dev/null || true
+          find files/lib/firmware -type d 2>/dev/null || true
 
       - name: Strip "is not set" lines for packages we want to enable
         run: |
